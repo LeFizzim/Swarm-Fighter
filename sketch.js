@@ -12,6 +12,12 @@ let shopItems = []; // Items available in the shop
 let selectedWeapon = null; // The weapon the player has chosen
 let gameIsPaused = false;
 let gameState = 'START'; // Possible values: 'START', 'PLAYING'
+let roundTime = 60;
+let roundTimer = 0;
+let spawnTimer = 0;
+let totalGold = 0;
+let goldThisRound = 0;
+let roundActive = false;
 
 // --- Player Class Definition ---
 class Player {
@@ -121,6 +127,7 @@ class Enemy {
         this.size = size;
         this.color = color;
         this.speed = speed;
+        this.hp = 50; // Default HP
     }
 
     display() {
@@ -143,24 +150,36 @@ class Enemy {
             this.y += directionY * this.speed;
         }
     }
+
+    takeDamage(amount) {
+        this.hp -= amount;
+        if (this.hp <= 0) {
+            totalGold += 2;
+            goldThisRound += 2;
+            document.getElementById('total-gold').innerText = totalGold;
+            return true;
+        }
+        return false;
+    }
 }
 
 // --- Bullet Class Definition ---
 class Bullet {
-    constructor(x, y, angle) {
+    constructor(x, y, angle, damage) {
         this.x = x;
         this.y = y;
         this.speed = 10;
         this.vx = cos(angle) * this.speed;
         this.vy = sin(angle) * this.speed;
         this.size = 5;
-        this.life = 100; // Frames to live
+        // this.life = 100; // Removed lifetime limit
+        this.damage = damage;
     }
 
     update() {
         this.x += this.vx;
         this.y += this.vy;
-        this.life--;
+        // this.life--; // Removed lifetime limit
     }
 
     display() {
@@ -188,6 +207,7 @@ class Weapon {
         this.burstSize = 3;
         this.burstDelay = 5; // Frames between shots in a burst
         this.burstCooldown = 30; // Frames between bursts (0.5s at 60fps)
+        this.damage = 30; // Damage per bullet
     }
 
     shoot(x, y, angle) {
@@ -205,7 +225,7 @@ class Weapon {
     update(x, y) {
         if (this.isBursting) {
             if (this.burstTimer % this.burstDelay === 0) {
-                bullets.push(new Bullet(x, y, this.angle));
+                bullets.push(new Bullet(x, y, this.angle, this.damage));
                 this.burstCount++;
                 if (this.burstCount >= this.burstSize) {
                     this.isBursting = false;
@@ -245,6 +265,18 @@ function draw() {
     } else if (gameState === 'PLAYING') {
         // 2. Update Logic (Conditional): Only run movement/AI if NOT paused
         if (!gameIsPaused) {
+            // Round Logic
+            if (frameCount % 60 === 0 && roundTime > 0) {
+                roundTime--;
+            }
+
+            // Enemy Spawning (Every 2 seconds = 120 frames)
+            spawnTimer++;
+            if (spawnTimer >= 120 && roundTime > 0) {
+                enemies.push(new Enemy(random(width), random(height), 20, color(100, 255, 100), ENEMY_SPEED));
+                spawnTimer = 0;
+            }
+
             // Player movement (WASD/Arrow keys)
             player.move();
 
@@ -255,8 +287,26 @@ function draw() {
             // Update Bullets
             for (let i = bullets.length - 1; i >= 0; i--) {
                 bullets[i].update();
-                if (bullets[i].isOffScreen() || bullets[i].life <= 0) {
+                if (bullets[i].isOffScreen()) { // Removed life check
                     bullets.splice(i, 1);
+                }
+            }
+
+            // Collision Detection: Bullets vs Enemies
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                let bullet = bullets[i];
+                for (let j = enemies.length - 1; j >= 0; j--) {
+                    let enemy = enemies[j];
+                    let d = dist(bullet.x, bullet.y, enemy.x, enemy.y);
+
+                    if (d < enemy.size / 2 + bullet.size / 2) {
+                        // Hit!
+                        if (enemy.takeDamage(bullet.damage)) {
+                            enemies.splice(j, 1); // Remove dead enemy
+                        }
+                        bullets.splice(i, 1); // Remove bullet
+                        break; // Bullet hits only one enemy
+                    }
                 }
             }
 
@@ -280,6 +330,19 @@ function draw() {
         for (let enemy of enemies) {
             enemy.display();
         }
+
+        // Draw UI (Timer and Gold)
+        fill(255);
+        textSize(24);
+        textAlign(CENTER, TOP);
+        text(roundTime, width / 2, 10);
+
+        textAlign(RIGHT, TOP);
+        textSize(16); // Smaller text for Gold
+        fill(255);
+        text("Round Gold: ", width - 60, 10);
+        fill(255, 215, 0); // Gold color
+        text(goldThisRound, width - 20, 10);
 
 
         // 4. Pause Overlay (Conditional)
@@ -407,6 +470,12 @@ function keyReleased() {
     if (gameState === 'START') {
         if (keyCode === ENTER && player.inventory.length > 0) {
             gameState = 'PLAYING';
+            roundTime = 60; // Reset timer
+            spawnTimer = 0;
+            goldThisRound = 0;
+            enemies = []; // Clear existing enemies
+            // Spawn initial enemy
+            enemies.push(new Enemy(random(width), random(height), 20, color(100, 255, 100), ENEMY_SPEED));
         }
     } else if (gameState === 'PLAYING') {
         if (keyCode === 27) { // ESC key
