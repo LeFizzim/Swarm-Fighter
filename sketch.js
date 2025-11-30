@@ -7,6 +7,9 @@ const DAMPING_FACTOR = 0.9; // Controls how quickly velocity decays (momentum)
 // --- Global Variables ---
 let player;
 let enemies = [];
+let bullets = []; // Store active bullets
+let shopItems = []; // Items available in the shop
+let selectedWeapon = null; // The weapon the player has chosen
 let gameIsPaused = false;
 let gameState = 'START'; // Possible values: 'START', 'PLAYING'
 
@@ -21,6 +24,7 @@ class Player {
         this.velX = 0;
         this.velY = 0;
         this.acceleration = 0.5; // How quickly the player speeds up
+        this.inventory = []; // Player inventory
     }
 
     display() {
@@ -74,6 +78,39 @@ class Player {
         this.x = constrain(this.x, this.size / 2, width - this.size / 2);
         this.y = constrain(this.y, this.size / 2, height - this.size / 2);
     }
+
+    shoot() {
+        // Auto-fire logic
+        this.autoShoot(enemies);
+    }
+
+    getClosestEnemy(enemies) {
+        let closestDist = Infinity;
+        let closestEnemy = null;
+        for (let enemy of enemies) {
+            let d = dist(this.x, this.y, enemy.x, enemy.y);
+            if (d < closestDist) {
+                closestDist = d;
+                closestEnemy = enemy;
+            }
+        }
+        return closestEnemy;
+    }
+
+    autoShoot(enemies) {
+        let target = this.getClosestEnemy(enemies);
+        if (target && this.inventory.length > 0) {
+            let weapon = this.inventory[0];
+            let angle = atan2(target.y - this.y, target.x - this.x);
+            weapon.shoot(this.x, this.y, angle);
+        }
+    }
+
+    updateWeapons() {
+        if (this.inventory.length > 0) {
+            this.inventory[0].update(this.x, this.y);
+        }
+    }
 }
 
 // --- Enemy Class Definition ---
@@ -108,6 +145,78 @@ class Enemy {
     }
 }
 
+// --- Bullet Class Definition ---
+class Bullet {
+    constructor(x, y, angle) {
+        this.x = x;
+        this.y = y;
+        this.speed = 10;
+        this.vx = cos(angle) * this.speed;
+        this.vy = sin(angle) * this.speed;
+        this.size = 5;
+        this.life = 100; // Frames to live
+    }
+
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.life--;
+    }
+
+    display() {
+        fill(255, 255, 0);
+        noStroke();
+        ellipse(this.x, this.y, this.size);
+    }
+
+    isOffScreen() {
+        return (this.x < 0 || this.x > width || this.y < 0 || this.y > height);
+    }
+}
+
+// --- Weapon Class Definition ---
+class Weapon {
+    constructor(name, type) {
+        this.name = name;
+        this.type = type; // 'SMG', etc.
+        this.lastShotTime = 0;
+        this.burstCount = 0;
+        this.isBursting = false;
+        this.burstTimer = 0;
+
+        // SMG Stats
+        this.burstSize = 3;
+        this.burstDelay = 5; // Frames between shots in a burst
+        this.burstCooldown = 30; // Frames between bursts (0.5s at 60fps)
+    }
+
+    shoot(x, y, angle) {
+        // Logic handled in update() for bursts
+        if (!this.isBursting && frameCount - this.lastShotTime > this.burstCooldown) {
+            this.isBursting = true;
+            this.burstCount = 0;
+            this.burstTimer = 0;
+            // this.originX = x; // No longer needed
+            // this.originY = y; // No longer needed
+            this.angle = angle;
+        }
+    }
+
+    update(x, y) {
+        if (this.isBursting) {
+            if (this.burstTimer % this.burstDelay === 0) {
+                bullets.push(new Bullet(x, y, this.angle));
+                this.burstCount++;
+                if (this.burstCount >= this.burstSize) {
+                    this.isBursting = false;
+                    this.lastShotTime = frameCount;
+                }
+            }
+            this.burstTimer++;
+        }
+    }
+}
+
 // --- p5.js Setup Function (Runs once at the start) ---
 function setup() {
     let canvasWidth = windowWidth - LEFT_PANEL_WIDTH;
@@ -119,6 +228,11 @@ function setup() {
 
     player = new Player(width / 2, height / 2, 30, color(255, 100, 100));
     enemies.push(new Enemy(50, 50, 20, color(100, 255, 100), ENEMY_SPEED));
+
+    // Initialize Shop Items (3 SMGs)
+    shopItems.push(new Weapon("SMG Alpha", "SMG"));
+    shopItems.push(new Weapon("SMG Beta", "SMG"));
+    shopItems.push(new Weapon("SMG Gamma", "SMG"));
 }
 
 // --- p5.js Draw Function (Runs continuously) ---
@@ -134,6 +248,18 @@ function draw() {
             // Player movement (WASD/Arrow keys)
             player.move();
 
+            // Handle Shooting (Auto-Fire)
+            player.shoot();
+            player.updateWeapons();
+
+            // Update Bullets
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                bullets[i].update();
+                if (bullets[i].isOffScreen() || bullets[i].life <= 0) {
+                    bullets.splice(i, 1);
+                }
+            }
+
             // Enemy movement/AI updates (chases player)
             for (let enemy of enemies) {
                 enemy.move(player);
@@ -144,6 +270,11 @@ function draw() {
 
         // Draw player
         player.display();
+
+        // Draw Bullets
+        for (let bullet of bullets) {
+            bullet.display();
+        }
 
         // Draw enemies 
         for (let enemy of enemies) {
@@ -172,16 +303,107 @@ function draw() {
 function drawStartScreen() {
     fill(255);
     textAlign(CENTER, CENTER);
-    textSize(48);
-    text("SURVIVAL GAME", width / 2, height / 2 - 50);
+
+    // Draw Shop Items
+    let startX = width / 2 - 220;
+    let startY = height / 2 - 100;
+
+    for (let i = 0; i < shopItems.length; i++) {
+        let x = startX + i * 150;
+        let y = startY;
+        let w = 140;
+        let h = 200;
+
+        // Highlight selected item
+        if (selectedWeapon === shopItems[i]) {
+            stroke(255, 255, 0);
+            strokeWeight(3);
+            fill(50, 50, 50);
+        } else {
+            stroke(100);
+            strokeWeight(1);
+            fill(30, 30, 30);
+        }
+
+        rect(x, y, w, h);
+
+        // Text
+        noStroke();
+        fill(255);
+        textSize(16);
+        text(shopItems[i].name, x + w / 2, y + 30);
+        textSize(12);
+        text("Burst Fire", x + w / 2, y + 60);
+        text("Free", x + w / 2, y + 180);
+    }
+
     textSize(24);
-    text("Press ENTER to Start", width / 2, height / 2 + 50);
+    fill(255);
+    text("Choose a Weapon", width / 2, startY - 40);
+
+    if (selectedWeapon) {
+        // fill(100, 255, 100);
+        // text("Press ENTER to Start", width / 2, height - 50);
+    } else {
+        fill(150);
+        text("Select an item to continue", width / 2, height - 50);
+    }
+
+    // Always show start prompt if we have an item (which is now in inventory)
+    if (player.inventory.length > 0) {
+        fill(100, 255, 100);
+        text("Press ENTER to Start", width / 2, height - 50);
+    }
+}
+
+function mousePressed() {
+    if (gameState === 'START') {
+        // Check if clicked on an item
+        let startX = width / 2 - 220;
+        let startY = height / 2 - 100;
+
+        for (let i = shopItems.length - 1; i >= 0; i--) {
+            let x = startX + i * 150;
+            let y = startY;
+            let w = 140;
+            let h = 200;
+
+            if (mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h) {
+                // Only allow picking one item for now
+                if (player.inventory.length === 0) {
+                    let item = shopItems[i];
+                    player.inventory.push(item);
+                    shopItems.splice(i, 1); // Remove from shop
+                    selectedWeapon = item; // Keep track for logic if needed, or just use inventory
+                    updateInventoryUI();
+                }
+            }
+        }
+    }
+}
+
+function updateInventoryUI() {
+    const slots = document.querySelectorAll('.inventory-slot');
+    for (let i = 0; i < slots.length; i++) {
+        if (i < player.inventory.length) {
+            slots[i].style.backgroundColor = '#666';
+            slots[i].innerText = player.inventory[i].name.split(' ')[1] || 'W'; // Show 'Alpha', 'Beta' etc
+            slots[i].style.display = 'flex';
+            slots[i].style.justifyContent = 'center';
+            slots[i].style.alignItems = 'center';
+            slots[i].style.color = 'white';
+            slots[i].style.fontSize = '0.8rem';
+        } else {
+            slots[i].style.backgroundColor = '#333';
+            slots[i].innerText = '';
+        }
+    }
 }
 
 // --- p5.js Key Release Function ---
 function keyReleased() {
     if (gameState === 'START') {
-        if (keyCode === ENTER) {
+        if (keyCode === ENTER && player.inventory.length > 0) {
             gameState = 'PLAYING';
         }
     } else if (gameState === 'PLAYING') {
