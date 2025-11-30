@@ -309,15 +309,22 @@ function drawStartScreen() {
     let startY = height / 2 - 100;
 
     for (let i = 0; i < shopItems.length; i++) {
+        // Skip if item has been bought (null)
+        if (!shopItems[i]) continue;
+
         let x = startX + i * 150;
         let y = startY;
         let w = 140;
-        let h = 200;
+        let h = 140; // Square shape
+        let cornerRadius = 10; // Rounded corners
 
-        // Highlight selected item
-        if (selectedWeapon === shopItems[i]) {
-            stroke(255, 255, 0);
-            strokeWeight(3);
+        // Check for hover
+        let isHovered = (mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h);
+
+        // Highlight selected item or hovered item
+        if (selectedWeapon === shopItems[i] || isHovered) {
+            stroke(255, 255, 0); // Yellow glow
+            strokeWeight(isHovered ? 4 : 3); // Thicker border on hover
             fill(50, 50, 50);
         } else {
             stroke(100);
@@ -325,29 +332,21 @@ function drawStartScreen() {
             fill(30, 30, 30);
         }
 
-        rect(x, y, w, h);
+        rect(x, y, w, h, cornerRadius);
 
         // Text
         noStroke();
         fill(255);
         textSize(16);
-        text(shopItems[i].name, x + w / 2, y + 30);
+        text(shopItems[i].name, x + w / 2, y + 40);
         textSize(12);
-        text("Burst Fire", x + w / 2, y + 60);
-        text("Free", x + w / 2, y + 180);
+        text("Burst Fire", x + w / 2, y + 70);
+        text("Free", x + w / 2, y + 110);
     }
 
     textSize(24);
     fill(255);
     text("Choose a Weapon", width / 2, startY - 40);
-
-    if (selectedWeapon) {
-        // fill(100, 255, 100);
-        // text("Press ENTER to Start", width / 2, height - 50);
-    } else {
-        fill(150);
-        text("Select an item to continue", width / 2, height - 50);
-    }
 
     // Always show start prompt if we have an item (which is now in inventory)
     if (player.inventory.length > 0) {
@@ -362,19 +361,22 @@ function mousePressed() {
         let startX = width / 2 - 220;
         let startY = height / 2 - 100;
 
-        for (let i = shopItems.length - 1; i >= 0; i--) {
+        for (let i = 0; i < shopItems.length; i++) {
+            // Skip if item is already bought
+            if (!shopItems[i]) continue;
+
             let x = startX + i * 150;
             let y = startY;
             let w = 140;
-            let h = 200;
+            let h = 140; // Match new square size
 
             if (mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h) {
                 // Only allow picking one item for now
                 if (player.inventory.length === 0) {
                     let item = shopItems[i];
                     player.inventory.push(item);
-                    shopItems.splice(i, 1); // Remove from shop
-                    selectedWeapon = item; // Keep track for logic if needed, or just use inventory
+                    shopItems[i] = null; // Remove from shop but keep slot empty (prevent shifting)
+                    selectedWeapon = item;
                     updateInventoryUI();
                 }
             }
